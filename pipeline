@@ -1,0 +1,120 @@
+#!/usr/bin/env groovy
+
+@Library('shared-libraries-reusable')_
+
+currentBuild.displayName = "Build-#"+currentBuild.id
+
+	
+pipeline
+
+{
+     agent
+
+    {
+
+        label 'BTWindowsSlave'
+
+    }
+
+    stages
+    
+    {
+ stage('Checkout') {
+     
+steps{
+
+git credentialsId: 'BTvipuldubey', url: 'https://github.com/vipuldubey0520/SeleniumNUnitParam'  
+
+            }
+
+        }
+
+ stage('Installing Dependency'){
+
+steps{
+
+bat '''  "C:\\btjenkinstools\\nuget.exe" restore SeleniumNUnitParam.sln '''
+
+                }
+
+        }
+
+stage('Build'){
+
+steps{
+
+bat ''' "C:\\Program Files (x86)\\MSBuild\\14.0\\Bin\\MSBuild.exe" /t:clean SeleniumNUnitParam.sln
+
+"C:\\Program Files (x86)\\MSBuild\\14.0\\Bin\\MSBuild.exe" /t:build  /p:configuration=release SeleniumNUnitParam.sln '''
+
+                }
+
+        }
+
+        stage('Nunit Testing')
+
+        {
+
+  steps{
+
+ bat '''  "C:\\btjenkinstools\\NUnit.Console-3.10.0\\bin\\net35\\nunit3-console.exe" SeleniumNUnitParam\\bin\\Release\\SeleniumNUnitParam.dll '''
+
+ }
+ }
+ 
+ stage('Code Analysis') {
+
+steps{
+
+script {
+
+ bat '''  "C:\\btjenkinstools\\sonar-scanner-msbuild-4.7.1.2311-net46\\SonarQube.Scanner.MSBuild.exe" begin /k:"BTDotNet" /d:sonar.host.url="http://ec2-18-224-155-110.us-east-2.compute.amazonaws.com:9000"  /d:sonar.sources=SeleniumNUnitParam/  '''
+
+// /k - is for project name or key
+
+ bat '''  "C:\\Program Files (x86)\\MSBuild\\14.0\\Bin\\MSBuild.exe" SeleniumNUnitParam.sln /t:Rebuild '''
+
+bat ''' "C:\\btjenkinstools\\sonar-scanner-msbuild-4.7.1.2311-net46\\SonarQube.Scanner.MSBuild.exe" end '''
+
+// for ms-build sonar scanner as per document begin the sonar scaneer and end the sonar scanner - between that section you have to rebuild , if we are not using that sonar scanner will not start.
+
+}
+
+}
+
+}
+ 
+         stage('Zipping Artifacts') {
+
+            steps{
+
+                bat ''' jar -cMf "C:\\BTdemo\\workspace\\BTDOTNET\\SeleniumNUnitParam\\bin\\BTDOTNETRelease.zip" "C:\\BTdemo\\workspace\\BTDOTNET\\SeleniumNUnitParam\\bin\\Release" '''
+
+                 }
+
+          }
+          
+                  stage('Uploading Artifact to Nexus'){
+
+
+             steps
+
+             {
+
+
+               nexusArtifactUploader artifacts: [[artifactId: 'BTDOTNETRelease', classifier: '', file: '.\\SeleniumNUnitParam\\bin\\BTDOTNETRelease.zip', type: 'zip']], credentialsId: 'BTvipul', groupId: '${JOB_BASE_NAME}', nexusUrl: 'ec2-18-224-155-110.us-east-2.compute.amazonaws.com:8081/nexus', nexusVersion: 'nexus2', protocol: 'http', repository: 'BTDotnetRepo', version: 'Build-${BUILD_NUMBER}'
+
+//artifactID should be same as your zippd file name (use pipeline syntax to do this section)
+
+              }
+
+        }
+ 
+ }
+
+post {
+    always {
+    notification(currentBuild.currentResult)
+}
+}
+}
